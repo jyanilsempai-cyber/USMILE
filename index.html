@@ -1,4 +1,6 @@
 <title>Toy Store Expenses</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
 :root {
@@ -362,18 +364,47 @@ tbody tr:hover td{background:var(--surface-2);}
 }
 
 /* ── Responsive ── */
-@media(max-width:700px){
-  .app{flex-direction:column;}
-  .sidebar{width:100%;height:auto;border-right:none;border-bottom:1px solid var(--border);}
-  .sidebar nav{display:flex;flex-wrap:wrap;gap:4px;padding:6px;}
-  .nav-item{width:auto;font-size:12px;padding:6px 8px;}
-  .nav-item.active::before{display:none;}
-  .topbar{padding:0 16px;height:52px;}
-  .content{padding:16px;}
+/* ── Mobile Layout ── */
+@media(max-width:768px){
+  .sidebar{display:none;}
+  .main{padding-bottom:64px;}
+  .topbar{padding:0 14px;height:52px;}
+  .topbar h2{font-size:16px;}
+  .content{padding:12px;}
   .form-grid{grid-template-columns:1fr;}
   .tiles{grid-template-columns:1fr 1fr;}
   #chart-row{grid-template-columns:1fr!important;}
+  .card{border-radius:10px;}
+  table{font-size:12px;}
+  th,td{padding:8px 6px;}
+  .mobile-bottom-nav{display:flex!important;}
+  #add-btn{font-size:13px;padding:7px 14px;}
+  .topbar-left{display:flex;align-items:center;gap:10px;}
+  .mobile-logo{display:flex!important;}
 }
+/* ── Mobile Bottom Nav ── */
+.mobile-bottom-nav{
+  display:none;
+  position:fixed;bottom:0;left:0;right:0;
+  height:60px;
+  background:var(--surface);
+  border-top:1px solid var(--border);
+  box-shadow:0 -2px 12px rgba(15,23,42,.08);
+  z-index:200;
+  align-items:stretch;
+  justify-content:space-around;
+}
+.mob-nav-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;border:none;background:none;cursor:pointer;
+  font-size:10px;font-weight:500;color:var(--fg-2);font-family:inherit;
+  padding:4px 2px;transition:color .15s;
+}
+.mob-nav-btn .mob-icon{font-size:20px;line-height:1;}
+.mob-nav-btn.active{color:var(--accent);}
+.mob-nav-btn.active .mob-icon{transform:scale(1.1);}
+.mobile-logo{display:none;width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;}
+.mobile-logo img{width:100%;height:100%;object-fit:cover;}
 .hidden{display:none!important;}
 select option{background:var(--surface);color:var(--fg);}
 </style>
@@ -945,6 +976,25 @@ select option{background:var(--surface);color:var(--fg);}
   </main>
 </div>
 
+<!-- Mobile Bottom Nav -->
+<nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+  <button class="mob-nav-btn active" data-view="dashboard" onclick="showView('dashboard')">
+    <span class="mob-icon">🏠</span><span>Home</span>
+  </button>
+  <button class="mob-nav-btn" data-view="add" onclick="showView('add')">
+    <span class="mob-icon">➕</span><span>Expense</span>
+  </button>
+  <button class="mob-nav-btn" data-view="payments" onclick="showView('payments')">
+    <span class="mob-icon">💳</span><span>Payments</span>
+  </button>
+  <button class="mob-nav-btn" data-view="log" onclick="showView('log')">
+    <span class="mob-icon">📋</span><span>Log</span>
+  </button>
+  <button class="mob-nav-btn" data-view="profile" onclick="showView('profile')">
+    <span class="mob-icon">👤</span><span>Account</span>
+  </button>
+</nav>
+
 <div id="toast"></div>
 
 <script>
@@ -1062,6 +1112,7 @@ function doLogin() {
   const user = data.users.find(x=>x.username===u && x.password===p);
   if(!user) { document.getElementById('login-err').textContent='Invalid username or password.'; logActivity('login','Failed Login','Invalid attempt for username: '+u); return; }
   session = {userId:user.id, username:user.username, role:user.role, storeId:user.storeId||''};
+  try { localStorage.setItem('tsem_session', JSON.stringify(session)); } catch(e){}
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   logActivity('login','Logged In', (user.displayName||user.username)+' signed in');
@@ -1079,6 +1130,7 @@ document.getElementById('l-user').addEventListener('keydown', e=>{ if(e.key==='E
 function doLogout() {
   logActivity('logout','Logged Out', session?(data.users.find(u=>u.id===session.userId)||{}).displayName||session.username:'');
   session=null;
+  try { localStorage.removeItem('tsem_session'); } catch(e){}
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
 }
@@ -1114,8 +1166,7 @@ function showView(v) {
   const allViews=['dashboard','add','log','stores','payments','ledger','users','actlog','settings','profile'];
   allViews.forEach(x=>{
     document.getElementById('view-'+x).classList.toggle('hidden',x!==v);
-    const btn=document.querySelector(`[data-view="${x}"]`);
-    if(btn) btn.classList.toggle('active',x===v);
+    document.querySelectorAll(`[data-view="${x}"]`).forEach(btn=>btn.classList.toggle('active',x===v));
   });
   const titles={dashboard:'Dashboard',add:'Add Expense',log:'Expense Log',stores:'Stores',payments:'Payments',ledger:'Ledger',users:'User Management',actlog:'Activity Log',settings:'Settings',profile:'My Account'};
   document.getElementById('topbar-title').textContent=titles[v]||v;
@@ -1993,6 +2044,25 @@ document.addEventListener('keydown', function(e) {
 
 // ── Init ──
 load();
+// Restore session across refreshes
+try {
+  const saved = localStorage.getItem('tsem_session');
+  if(saved) {
+    const s = JSON.parse(saved);
+    const user = data.users.find(u=>u.id===s.userId);
+    if(user) {
+      session = {userId:user.id, username:user.username, role:user.role, storeId:user.storeId||''};
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      applyRoleUI();
+      updateSidebarUser();
+      renderPendingUsers();
+      showView('dashboard');
+    } else {
+      localStorage.removeItem('tsem_session');
+    }
+  }
+} catch(e){}
 document.getElementById('f-date').value=today();
 document.getElementById('filter-month').value=nowYM();
 document.getElementById('ledger-month').value=nowYM();
@@ -2517,5 +2587,12 @@ function rejectUser(puId) {
   save();
   logActivity('register','Request Rejected',`@${pu.username} registration rejected`);
   renderPendingUsers(); toast('Request rejected.');
+}
+
+// ── Service Worker Registration ──
+if('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
 }
 </script>
