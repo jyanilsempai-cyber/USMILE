@@ -871,11 +871,26 @@ select option{background:var(--surface);color:var(--fg);}
           <div class="card-header"><span class="card-title">Role Permissions</span><span style="font-size:12px;color:var(--fg-2)">Control what each role can do — SuperAdmin always has full access</span></div>
           <div id="role-perms-list" style="padding:0 0 8px"></div>
         </div>
-        <div class="card">
-          <div class="card-header"><span class="card-title">Data</span></div>
-          <div style="padding:16px 18px;display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-secondary" onclick="exportData()">Export JSON</button>
-            <button class="btn btn-danger" onclick="clearAllConfirm()">Clear All Expenses</button>
+        <div class="card" id="backup-restore-card">
+          <div class="card-header"><span class="card-title">💾 Backup &amp; Restore</span><span style="font-size:12px;color:var(--fg-2)">SuperAdmin only</span></div>
+          <div style="padding:16px 18px">
+            <div style="margin-bottom:14px">
+              <div style="font-size:13px;font-weight:600;color:var(--fg);margin-bottom:4px">Download Backup</div>
+              <div style="font-size:12px;color:var(--fg-2);margin-bottom:10px">Downloads all data (expenses, payments, stores, users, settings) as a JSON file.</div>
+              <button class="btn btn-primary" onclick="downloadBackup()">⬇ Download Backup</button>
+            </div>
+            <div style="border-top:1px solid var(--border);padding-top:14px">
+              <div style="font-size:13px;font-weight:600;color:var(--fg);margin-bottom:4px">Restore from Backup</div>
+              <div style="font-size:12px;color:var(--fg-2);margin-bottom:10px">⚠️ This will <strong>replace all current data</strong> with the backup. Cannot be undone.</div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input type="file" id="restore-file" accept=".json" style="font-size:12.5px;color:var(--fg);font-family:inherit">
+                <button class="btn btn-danger" onclick="restoreBackup()">⬆ Restore Backup</button>
+              </div>
+              <div id="restore-msg" style="margin-top:8px;font-size:12px"></div>
+            </div>
+            <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
+              <button class="btn btn-danger" onclick="clearAllConfirm()">🗑 Clear All Expenses</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1710,6 +1725,8 @@ function renderSettings() {
   renderFieldRules();
   renderRolePerms();
   renderPersons();
+  const backupCard = document.getElementById('backup-restore-card');
+  if(backupCard) backupCard.style.display = session.role==='superadmin' ? '' : 'none';
   const el=document.getElementById('store-list-settings');
   if(!data.stores.length){el.innerHTML='<div style="padding:10px;font-size:13px;color:var(--fg-2)">No stores yet.</div>';return;}
   el.innerHTML=data.stores.map((s,i)=>`
@@ -1841,12 +1858,46 @@ function deleteExpense(id) {
   logActivity('expense','Expense Deleted','ID: '+id);
   save(); updateBadge(); renderLog();
 }
-function exportData() {
-  const json=JSON.stringify(data,null,2);
-  const blob=new Blob([json],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download='toy-store-expenses.json'; a.click();
+function exportData() { downloadBackup(); }
+function downloadBackup() {
+  if(session.role !== 'superadmin') { toast('SuperAdmin only.'); return; }
+  const backup = { version: 1, exportedAt: new Date().toISOString(), data };
+  const json = JSON.stringify(backup, null, 2);
+  const blob = new Blob([json], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0,10);
+  a.href = url; a.download = 'usmile-backup-' + dateStr + '.json'; a.click();
   URL.revokeObjectURL(url);
+  toast('Backup downloaded!');
+}
+function restoreBackup() {
+  if(session.role !== 'superadmin') { toast('SuperAdmin only.'); return; }
+  const fileInput = document.getElementById('restore-file');
+  const msgEl = document.getElementById('restore-msg');
+  if(!fileInput.files.length) { msgEl.style.color='var(--danger)'; msgEl.textContent='Please select a backup JSON file first.'; return; }
+  const file = fileInput.files[0];
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      const restored = parsed.version === 1 ? parsed.data : parsed;
+      if(!restored.expenses || !restored.stores) throw new Error('Invalid backup file.');
+      if(!confirm('This will REPLACE all current data with the backup. Are you sure?')) return;
+      data = restored;
+      if(!data.persons) data.persons = [];
+      if(!data.reimbursements) data.reimbursements = [];
+      if(!data.rolePerms) data.rolePerms = {};
+      save();
+      msgEl.style.color = 'var(--good)';
+      msgEl.textContent = '✅ Backup restored successfully! Reloading…';
+      setTimeout(() => location.reload(), 1200);
+    } catch(err) {
+      msgEl.style.color = 'var(--danger)';
+      msgEl.textContent = '❌ Invalid backup file: ' + err.message;
+    }
+  };
+  reader.readAsText(file);
 }
 function clearAllConfirm() {
   if(!confirm('Clear ALL expense data? This cannot be undone.')) return;
