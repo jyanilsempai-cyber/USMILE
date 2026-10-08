@@ -2021,7 +2021,7 @@ function changePassword() {
 }
 
 // ── Misc ──
-function updateBadge() { document.getElementById('badge-count').textContent=visibleExpenses().length; }
+function updateBadge() { if(!session) return; document.getElementById('badge-count').textContent=visibleExpenses().length; }
 
 // ── Keyboard shortcuts ──
 document.addEventListener('keydown', function(e) {
@@ -2139,6 +2139,7 @@ initApp();
 
 // ── Payments ──
 function updatePaymentBadge() {
+  if(!session) return;
   const vp = visiblePayments();
   const el = document.getElementById('badge-payments');
   if(el) el.textContent = vp.length;
