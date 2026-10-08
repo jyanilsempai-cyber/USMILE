@@ -784,7 +784,8 @@ select option{background:var(--surface);color:var(--fg);}
       <!-- LEDGER (SuperAdmin only) -->
       <div id="view-ledger" class="hidden">
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap">
-          <input type="month" id="ledger-month" onchange="renderLedger()" style="background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:8px 11px;font-size:13px;font-family:inherit;color:var(--fg);outline:none">
+          <input type="month" id="ledger-month" onchange="renderLedger()" placeholder="All months" style="background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:8px 11px;font-size:13px;font-family:inherit;color:var(--fg);outline:none">
+<button class="btn btn-secondary" onclick="document.getElementById('ledger-month').value='';renderLedger()" style="font-size:12px;padding:7px 12px">Show Full Year</button>
           <span style="font-size:13px;color:var(--fg-2)">Filter by month — or leave blank for all time</span>
           <button class="btn btn-primary" onclick="printLedgerPDF()" style="margin-left:auto;display:flex;align-items:center;gap:6px">
             <span>📄</span> Export PDF
@@ -1176,6 +1177,7 @@ function showView(v) {
   if(v==='ledger') renderLedger();
   if(v==='users') { populateNewUserStore(); renderUsers(); }
   if(v==='settings') renderSettings();
+  if(v==='actlog') renderActivityLog();
   if(v==='add') { populateStoreSelect(); populatePaidBySelect(); applyFieldRules(); }
   if(v==='payments') { populatePaymentStoreSelect(); populatePaymentPaidBySelect(); renderPayments(); populateReimbPersonSelect(); populateReimbStoreSelect(); renderReimbBalances(); renderReimbHistory(); const rd=document.getElementById('rb-date'); if(rd) rd.value=today(); }
   if(v==='profile') {
@@ -2065,7 +2067,7 @@ try {
 } catch(e){}
 document.getElementById('f-date').value=today();
 document.getElementById('filter-month').value=nowYM();
-document.getElementById('ledger-month').value=nowYM();
+// ledger-month intentionally left blank — shows full year by default
 
 // ── Payments ──
 function updatePaymentBadge() {
