@@ -847,6 +847,14 @@ select option{background:var(--surface);color:var(--fg);}
       <!-- SETTINGS (SuperAdmin only) -->
       <div id="view-settings" class="hidden">
         <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><span class="card-title">👥 External Persons</span><span style="font-size:12px;color:var(--fg-2)">People outside the app who appear in Paid By</span></div>
+          <div id="persons-list" style="padding:6px 12px"></div>
+          <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+            <input type="text" id="new-person-name" placeholder="Full name (e.g. Ravi Shah)" style="flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:8px 11px;font-size:13.5px;font-family:inherit;color:var(--fg);outline:none">
+            <button class="btn btn-primary" onclick="addPerson()">Add Person</button>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:16px">
           <div class="card-header"><span class="card-title">Manage Stores</span></div>
           <div id="store-list-settings" style="padding:6px 12px"></div>
           <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
@@ -974,6 +982,7 @@ function load() {
   if(!data.users)      data.users      = [];
   if(!data.fieldRules)      data.fieldRules      = {};
   if(!data.reimbursements)  data.reimbursements  = [];
+  if(!data.persons)         data.persons         = [];
   if(!data.rolePerms)       data.rolePerms       = JSON.parse(JSON.stringify(DEFAULT_ROLE_PERMS));
   // fill missing perm keys
   ['manager','viewer'].forEach(role=>{
@@ -1142,14 +1151,42 @@ function populateNewUserStore() {
 // ── Paid By dropdown ──
 function populatePaidBySelect() {
   const sel = document.getElementById('f-paidby');
-  sel.innerHTML = '<option value="">Select person…</option>';
+  sel.innerHTML = '<option value="">Select paid by…</option>';
+  // App Users
+  const pg = document.createElement('optgroup');
+  pg.label = '👤 App Users';
   data.users.forEach(u => {
     const o = document.createElement('option');
     const dn = displayName(u);
-    o.value = u.id; o.textContent = dn + (u.displayName ? ' (@'+u.username+')' : '') + ' — ' + (ROLE_LABELS[u.role]||u.role);
+    o.value = 'user:' + u.id;
+    o.textContent = dn + (u.displayName ? ' (@'+u.username+')' : '') + ' — ' + (ROLE_LABELS[u.role]||u.role);
     if(u.id === session.userId) o.selected = true;
-    sel.appendChild(o);
+    pg.appendChild(o);
   });
+  sel.appendChild(pg);
+  // External Persons
+  if((data.persons||[]).length) {
+    const epg = document.createElement('optgroup');
+    epg.label = '👥 External Persons';
+    data.persons.forEach(p => {
+      const o = document.createElement('option');
+      o.value = 'person:' + p.id;
+      o.textContent = p.name;
+      epg.appendChild(o);
+    });
+    sel.appendChild(epg);
+  }
+  // Stores
+  const sg = document.createElement('optgroup');
+  sg.label = '🏪 Stores (Store Cash)';
+  const stores = session.storeId ? data.stores.filter(s=>s.id===session.storeId) : data.stores;
+  stores.forEach(s => {
+    const o = document.createElement('option');
+    o.value = 'store:' + s.id;
+    o.textContent = s.name + ' — Store Cash';
+    sg.appendChild(o);
+  });
+  sel.appendChild(sg);
 }
 
 // ── Field Rules ──
@@ -1200,17 +1237,30 @@ function submitExpense(e) {
   const cat=document.getElementById('f-cat').value;
   const amt=parseFloat(document.getElementById('f-amount').value.replace(/,/g,''));
   const desc=document.getElementById('f-desc').value.trim();
-  const paidByUserId=document.getElementById('f-paidby').value;
+  const paidByRaw=document.getElementById('f-paidby').value;
   const paidAmt=0;
   const notes=document.getElementById('f-notes').value.trim();
   // validate required fields per rules
   if(!store||!date||!amt) return;
   if(data.fieldRules['cat']!=='hidden'&&data.fieldRules['cat']!=='optional'&&!cat) return;
   if(data.fieldRules['desc']!=='hidden'&&data.fieldRules['desc']!=='optional'&&!desc) return;
-  if(data.fieldRules['paidby']==='required'&&!paidByUserId) return;
-  const paidByUser = paidByUserId ? data.users.find(u=>u.id===paidByUserId) : null;
-  const paidBy = paidByUser ? displayName(paidByUser) : '';
-  data.expenses.push({id:'e'+Date.now()+Math.random(),store,date,cat,amt,desc,paidBy,paidByUserId,paidAmt,notes,addedBy:session.userId});
+  if(data.fieldRules['paidby']==='required'&&!paidByRaw) return;
+  // resolve paidBy label and userId
+  let paidBy='', paidByUserId='', paidByStoreId='';
+  if(paidByRaw.startsWith('user:')) {
+    paidByUserId = paidByRaw.replace('user:','');
+    const u = data.users.find(x=>x.id===paidByUserId);
+    paidBy = u ? displayName(u) : '';
+  } else if(paidByRaw.startsWith('store:')) {
+    paidByStoreId = paidByRaw.replace('store:','');
+    const s = storeById(paidByStoreId);
+    paidBy = s.name + ' (Store Cash)';
+  } else if(paidByRaw.startsWith('person:')) {
+    const personId = paidByRaw.replace('person:','');
+    const p = (data.persons||[]).find(x=>x.id===personId);
+    paidBy = p ? p.name : '';
+  }
+  data.expenses.push({id:'e'+Date.now()+Math.random(),store,date,cat,amt,desc,paidBy,paidByUserId,paidByStoreId,paidAmt,notes,addedBy:session.userId});
   save(); updateBadge(); clearForm();
   logActivity('expense','Expense Added', storeById(store).name+' — '+cat+' — '+fmt(amt));
   toast('Expense saved!');
@@ -1623,9 +1673,43 @@ function applyPermUI() {
   if(actlogNav) actlogNav.classList.toggle('hidden', !hasPerm('view_actlog'));
 }
 
+// ── External Persons ──
+function renderPersons() {
+  const el = document.getElementById('persons-list');
+  if(!el) return;
+  if(!(data.persons||[]).length) {
+    el.innerHTML='<div style="padding:10px 6px;font-size:13px;color:var(--fg-2)">No external persons added yet.</div>';
+    return;
+  }
+  el.innerHTML = data.persons.map(p=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border)">
+      <div style="width:30px;height:30px;border-radius:50%;background:var(--purple-bg);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--purple);flex-shrink:0">${p.name.charAt(0).toUpperCase()}</div>
+      <div style="flex:1;font-weight:600;font-size:13.5px">${p.name}</div>
+      <button class="btn-icon" onclick="deletePerson('${p.id}')">🗑</button>
+    </div>`).join('');
+}
+
+function addPerson() {
+  const inp = document.getElementById('new-person-name');
+  const name = inp.value.trim();
+  if(!name) { toast('Please enter a name.'); return; }
+  if((data.persons||[]).find(p=>p.name.toLowerCase()===name.toLowerCase())) { toast('Person already exists.'); return; }
+  if(!data.persons) data.persons=[];
+  data.persons.push({ id:'p'+Date.now(), name });
+  save(); inp.value=''; renderPersons();
+  toast('Person added!');
+}
+
+function deletePerson(id) {
+  if(!confirm('Remove this person from the list?')) return;
+  data.persons = data.persons.filter(p=>p.id!==id);
+  save(); renderPersons(); toast('Person removed.');
+}
+
 function renderSettings() {
   renderFieldRules();
   renderRolePerms();
+  renderPersons();
   const el=document.getElementById('store-list-settings');
   if(!data.stores.length){el.innerHTML='<div style="padding:10px;font-size:13px;color:var(--fg-2)">No stores yet.</div>';return;}
   el.innerHTML=data.stores.map((s,i)=>`
@@ -1889,8 +1973,19 @@ function populatePaymentStoreSelect() {
 function populatePaymentPaidBySelect() {
   const sel = document.getElementById('pay-by');
   if(!sel) return;
-  sel.innerHTML = '<option value="">Select person…</option>';
-  data.users.forEach(u=>{ const o=document.createElement('option'); o.value=u.id; o.textContent=displayName(u)+' (@'+u.username+')'; if(u.id===session.userId) o.selected=true; sel.appendChild(o); });
+  sel.innerHTML = '<option value="">Select paid by…</option>';
+  const pg = document.createElement('optgroup'); pg.label = '👤 App Users';
+  data.users.forEach(u=>{ const o=document.createElement('option'); o.value='user:'+u.id; o.textContent=displayName(u)+' (@'+u.username+')'; if(u.id===session.userId) o.selected=true; pg.appendChild(o); });
+  sel.appendChild(pg);
+  if((data.persons||[]).length) {
+    const epg = document.createElement('optgroup'); epg.label = '👥 External Persons';
+    data.persons.forEach(p=>{ const o=document.createElement('option'); o.value='person:'+p.id; o.textContent=p.name; epg.appendChild(o); });
+    sel.appendChild(epg);
+  }
+  const sg = document.createElement('optgroup'); sg.label = '🏪 Stores (Store Cash)';
+  const stores = session.storeId ? data.stores.filter(s=>s.id===session.storeId) : data.stores;
+  stores.forEach(s=>{ const o=document.createElement('option'); o.value='store:'+s.id; o.textContent=s.name+' — Store Cash'; sg.appendChild(o); });
+  sel.appendChild(sg);
 }
 function clearPaymentForm() {
   ['pay-amt','pay-to','pay-desc','pay-notes'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
@@ -1905,7 +2000,7 @@ function submitPayment() {
   const date   = document.getElementById('pay-date').value;
   const amt    = parseFloat(document.getElementById('pay-amt').value.replace(/,/g,''));
   const paidTo = document.getElementById('pay-to').value.trim();
-  const paidByUserId = document.getElementById('pay-by').value;
+  const paidByRaw  = document.getElementById('pay-by').value;
   const desc   = document.getElementById('pay-desc').value.trim();
   const notes  = document.getElementById('pay-notes').value.trim();
   const errEl  = document.getElementById('pay-err');
@@ -1913,11 +2008,23 @@ function submitPayment() {
   if(!date)         { errEl.textContent='Please select a date.'; return; }
   if(!amt||isNaN(amt)||amt<=0) { errEl.textContent='Please enter a valid amount.'; return; }
   if(!paidTo)       { errEl.textContent='Supplier / vendor name is required.'; return; }
-  if(!paidByUserId) { errEl.textContent='Please select who made the payment.'; return; }
-  const paidByUser = data.users.find(u=>u.id===paidByUserId);
+  if(!paidByRaw)    { errEl.textContent='Please select who made the payment.'; return; }
+  let paidByUserId='', paidBy='';
+  if(paidByRaw.startsWith('user:')) {
+    paidByUserId = paidByRaw.replace('user:','');
+    const u = data.users.find(x=>x.id===paidByUserId);
+    paidBy = u ? displayName(u) : '';
+  } else if(paidByRaw.startsWith('store:')) {
+    const s = storeById(paidByRaw.replace('store:',''));
+    paidBy = s.name + ' (Store Cash)';
+  } else if(paidByRaw.startsWith('person:')) {
+    const personId = paidByRaw.replace('person:','');
+    const p = (data.persons||[]).find(x=>x.id===personId);
+    paidBy = p ? p.name : '';
+  }
   data.payments.push({
     id:'pay'+Date.now()+Math.random(), store, date, amt, paidTo,
-    paidByUserId, paidBy: displayName(paidByUser), desc, notes, addedBy:session.userId
+    paidByUserId, paidBy, desc, notes, addedBy:session.userId
   });
   logActivity('payment','Payment Added', storeById(store).name+' — Paid to: '+paidTo+' — '+fmt(amt));
   save(); updatePaymentBadge(); clearPaymentForm();
